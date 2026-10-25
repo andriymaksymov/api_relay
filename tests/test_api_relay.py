@@ -32,9 +32,10 @@ class FakeTargetHandler(BaseHTTPRequestHandler):
         return
 
 
-def _start_server(handler_cls, host="127.0.0.1"):
+def _start_server(handler_cls, host="127.0.0.1", upstream_timeout=5):
     """Start a ThreadingHTTPServer on a random port and return (server, thread)."""
     server = ThreadingHTTPServer((host, 0), handler_cls)
+    server.upstream_timeout = upstream_timeout  # required by RelayHandler
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server, thread

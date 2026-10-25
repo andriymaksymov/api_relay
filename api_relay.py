@@ -13,9 +13,14 @@ TARGETS = {
     "openai": "https://api.openai.com",
 }
 
-# Headers that must not be forwarded between hops (RFC 2616 §13.5.1).
+# Default upstream request timeout (seconds).  Override via --timeout or API_RELAY_TIMEOUT.
+UPSTREAM_TIMEOUT = 180
+
+# Headers that must never be forwarded between hops (RFC 2616 §13.5.1).
+# content-length is excluded because we always rewrite it from the actual payload.
 HOP_BY_HOP_HEADERS = {
     "connection",
+    "content-length",
     "keep-alive",
     "proxy-authenticate",
     "proxy-authorization",
@@ -24,7 +29,6 @@ HOP_BY_HOP_HEADERS = {
     "transfer-encoding",
     "upgrade",
     "host",
-    "content-length",
 }
 
 
@@ -59,16 +63,6 @@ def build_target_url(path: str, base_url: str) -> str:
 class RelayHandler(BaseHTTPRequestHandler):
     server_version = "APIRelay/1.0"
 
-    # ── HTTP verb dispatch ─────────────────────────────────────────────────────
-
-    def do_GET(self):     self._proxy_request()   # noqa: E704
-    def do_POST(self):    self._proxy_request()   # noqa: E704
-    def do_PUT(self):     self._proxy_request()   # noqa: E704
-    def do_PATCH(self):   self._proxy_request()   # noqa: E704
-    def do_DELETE(self):  self._proxy_request()   # noqa: E704
-    def do_HEAD(self):    self._proxy_request()   # noqa: E704
-    def do_OPTIONS(self): self._proxy_request()   # noqa: E704
-
     def log_message(self, fmt, *args):
         sys.stderr.write(
             f"{self.address_string()} - - [{self.log_date_time_string()}] {fmt % args}\n"
@@ -87,7 +81,7 @@ class RelayHandler(BaseHTTPRequestHandler):
 
         req = Request(target_url, data=body or None, headers=headers, method=self.command)
         try:
-            with urlopen(req, timeout=60) as response:
+            with urlopen(req, timeout=self.server.upstream_timeout) as response:
                 payload = response.read()
                 self._send_response(response.status, payload, response.headers)
         except HTTPError as exc:
@@ -164,14 +158,20 @@ class RelayHandler(BaseHTTPRequestHandler):
     def _send_response(self, status: int, payload: bytes, incoming_headers) -> None:
         self.send_response(status)
         for key, value in incoming_headers.items():
-            lower = key.lower()
-            if lower in HOP_BY_HOP_HEADERS or lower in {"transfer-encoding", "content-length"}:
-                continue
-            self.send_header(key, value)
+            if key.lower() not in HOP_BY_HOP_HEADERS:
+                self.send_header(key, value)
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
         if payload:
             self.wfile.write(payload)
+
+    # ── HTTP verb dispatch ─────────────────────────────────────────────────────
+    # All verbs share identical proxy logic; chained class-level assignment
+    # avoids seven identical one-liner stubs.  Must appear after _proxy_request.
+
+    do_GET = do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_OPTIONS = (
+        _proxy_request
+    )
 
 
 # ── CLI & entry-point ──────────────────────────────────────────────────────────
@@ -197,6 +197,13 @@ def parse_args() -> argparse.Namespace:
         choices=list(TARGETS),
         help="Upstream provider (default: anthropic)",
     )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=int(os.environ.get("API_RELAY_TIMEOUT", str(UPSTREAM_TIMEOUT))),
+        metavar="SECONDS",
+        help=f"Upstream request timeout in seconds (default: {UPSTREAM_TIMEOUT})",
+    )
     return parser.parse_args()
 
 
@@ -206,7 +213,11 @@ def main() -> None:
 
     target = get_target_base_url(args.provider)
     server = ThreadingHTTPServer((args.host, args.port), RelayHandler)
-    print(f"API relay listening on http://{args.host}:{args.port}  →  {target}")
+    server.upstream_timeout = args.timeout  # made available to RelayHandler via self.server
+    print(
+        f"API relay listening on http://{args.host}:{args.port}  →  {target}"
+        f"  (timeout: {args.timeout}s)"
+    )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
