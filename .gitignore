@@ -1,0 +1,41 @@
+# ── Python byte-code ──────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ── Distribution / packaging ───────────────────────────────────────────────────
+*.egg-info/
+*.egg
+dist/
+build/
+MANIFEST
+
+# ── Virtual environments ───────────────────────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+
+# ── Test & coverage artefacts ──────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# ── Linter / type-checker caches ──────────────────────────────────────────────
+.ruff_cache/
+.mypy_cache/
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.key
+
+# ── Editor / OS noise ─────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
