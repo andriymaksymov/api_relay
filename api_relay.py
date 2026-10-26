@@ -188,8 +188,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--port",
         type=int,
-        default=int(os.environ.get("API_RELAY_PORT", "8099")),
-        help="Listen port (default: 8099)",
+        default=int(os.environ.get("API_RELAY_PORT", "80")),
+        help="Listen port (default: 80)",
     )
     parser.add_argument(
         "--provider",
